@@ -1,0 +1,12 @@
+curl \
+    --request POST \
+    --data '{
+        "jsonrpc":"2.0",
+        "method":"eth_getTransactionByHash",
+        "params":[
+            "0xd944eebb8412b23a394eca09dd5d819acc5d342671eaca1f2f7cd8c515067035"
+        ],
+        "id": 1
+        }' \
+    --header 'Content-Type: application/json' \
+    http://localhost:8545 | jq

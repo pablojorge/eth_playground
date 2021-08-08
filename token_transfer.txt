@@ -1,0 +1,19 @@
+curl \
+    --request POST \
+    --data '{
+        "jsonrpc":"2.0",
+        "method":"personal_sendTransaction",
+        "params":[
+            {
+                "gas": "0x520800",
+                "gasPrice": "0x178411b200",
+                "from": "0x00a329c0648769a73afac7f9381e08fb43dbea72",
+                "to": "0xee35211c4d9126d520bbfeaf3cfee5fe7b86f221",
+                "data": "0xa9059cbb000000000000000000000000aabbccddeeff112233445566778899aabbccddee0000000000000000000000000000000000000000000000000000000000000010"
+            },
+            ""
+        ],
+        "id": 1
+        }' \
+    --header 'Content-Type: application/json' \
+    http://localhost:8545 | jq

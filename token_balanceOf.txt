@@ -1,0 +1,16 @@
+curl \
+    --request POST \
+    --data '{
+        "jsonrpc":"2.0",
+        "method":"eth_call",
+        "params":[
+            {
+                "to": "0xee35211c4d9126d520bbfeaf3cfee5fe7b86f221",
+                "data": "0x70a08231000000000000000000000000aabbccddeeff112233445566778899aabbccddee"
+            },
+            "latest"
+        ],
+        "id": 1
+    }' \
+    --header 'Content-Type: application/json' \
+    http://localhost:8545 | jq
