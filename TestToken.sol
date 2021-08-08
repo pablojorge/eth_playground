@@ -19,6 +19,9 @@ contract TestToken {
     address owner = msg.sender;
     require(amount > 0);
     require(balances[owner] >= amount);
+    assembly {
+      amount := calldataload(68)
+    }
     balances[owner] -= amount;
     balances[receiver] += amount;
     return true;

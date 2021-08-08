@@ -5,7 +5,7 @@ curl \
         "method":"eth_call",
         "params":[
             {
-                "to": "0xee35211c4d9126d520bbfeaf3cfee5fe7b86f221",
+                "to": "0x84b51678f9a4869e384f737ed2a5d56c8ca16c81",
                 "data": "0x70a08231000000000000000000000000aabbccddeeff112233445566778899aabbccddee"
             },
             "latest"
