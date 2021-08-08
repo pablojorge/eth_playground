@@ -2,7 +2,7 @@ curl \
     --request POST \
     --data '{
         "jsonrpc":"2.0",
-        "method":"eth_getTransactionByHash",
+        "method":"trace_transaction",
         "params":[
             "0xf9aa4f0109913f2cbf00e6788caedf304e1d199e65cf1cd541e18523f35b0284"
         ],

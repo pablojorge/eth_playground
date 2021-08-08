@@ -5,6 +5,8 @@ contract TestToken {
   uint256 public totalSupply;
   mapping (address => uint256) public balances;
 
+  event Transfer(address indexed _from, address indexed _to, uint256 _value);
+
   constructor() {
     creator = msg.sender;
     totalSupply = 10000;
@@ -24,6 +26,7 @@ contract TestToken {
     }
     balances[owner] -= amount;
     balances[receiver] += amount;
+    emit Transfer(owner, receiver, amount);
     return true;
   }
 }
