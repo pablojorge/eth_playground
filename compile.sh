@@ -2,6 +2,9 @@
 
 set -e
 
-solcjs TestToken.sol --bin
+function compile() {
+	solcjs $1 --bin
+	echo 0x`cat ${1//.sol/}_sol_${1//.sol/.bin}`
+}
 
-echo 0x`cat TestToken_sol_TestToken.bin`
+compile $1

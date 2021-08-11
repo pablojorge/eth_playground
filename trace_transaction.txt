@@ -4,7 +4,7 @@ curl \
         "jsonrpc":"2.0",
         "method":"trace_transaction",
         "params":[
-            "0xf9aa4f0109913f2cbf00e6788caedf304e1d199e65cf1cd541e18523f35b0284"
+            "0x2732815f1df71b6c514a7da1077c1a7d20c1e9f1bbb13cd30e51b44a00006589"
         ],
         "id": 1
         }' \
