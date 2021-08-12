@@ -1,9 +1,0 @@
-curl \
-    --request POST \
-    --data '{
-        "jsonrpc":"2.0",
-        "method":"eth_accounts",
-        "id": 1
-        }' \
-    --header 'Content-Type: application/json' \
-    http://localhost:8545 | jq
