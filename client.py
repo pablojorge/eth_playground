@@ -130,19 +130,22 @@ def test_token_transfer(client):
     sender = client.eth_accounts()[0]
     contractAddress = deploy_contract(client, sender, code)
     receipt = contract_send_tx(client, sender, contractAddress, 
-        "0xa9059cbb" + 
-          "000000000000000000000000aabbccddeeff112233445566778899aabbccddee" +
-          "0000000000000000000000000000000000000000000000000000000000000010" +
+        "0xa9059cbb" 
+          "000000000000000000000000aabbccddeeff112233445566778899aabbccddee"
+          "0000000000000000000000000000000000000000000000000000000000000010"
           "0000000000000000000000000000000000000000000000000000000000000021")
     balance = contract_call(client, contractAddress, 
-        "0x70a08231" + 
+        "0x70a08231"
           "000000000000000000000000aabbccddeeff112233445566778899aabbccddee")
-    print("Balance:", balance)
+    print("Balance:", balance, balance == ('0x' + zeropad('21', 64)))
 
     # print(dumps(receipt))
     # print(dumps(client.trace_transaction(receipt['transactionHash'])))
     # topics = ['0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef']
     # print(dumps(client.eth_getLogs(contractAddress, "earliest", "latest", topics)))
+
+def zeropad(str_, size):
+    return "0" * (size - len(str_)) + str_
 
 def test_proxy_contract(client):
     token_code = compile("TestToken.sol")
@@ -150,24 +153,36 @@ def test_proxy_contract(client):
     sender = client.eth_accounts()[0]
     token_address = deploy_contract(client, sender, token_code)
     proxy_address = deploy_contract(client, sender, proxy_code)
+
+    # Fund proxy contract with some tokens
+    contract_send_tx(client, sender, token_address, 
+        "0xa9059cbb" +
+          zeropad(proxy_address[2:], 64) +
+          "0000000000000000000000000000000000000000000000000000000000002000")
+
+    # Submit tx to send from proxy to dummy address
     submit_receipt = contract_send_tx(client, sender, proxy_address, 
-        "0xc6427474" + 
-          "0"*24 + token_address[2:] +
-          "0000000000000000000000000000000000000000000000000000000000000000" + 
-          "0000000000000000000000000000000000000000000000000000000000000060" + 
-            "0000000000000000000000000000000000000000000000000000000000000044" + 
-            "a9059cbb" + 
-            "000000000000000000000000aabbccddeeff112233445566778899aabbccddee" +
-            "0000000000000000000000000000000000000000000000000000000000000010" + 
-            "00000000000000000000000000000000000000000000000000000000")
-    print(dumps(submit_receipt))
+        "0xc6427474" +
+          zeropad(token_address[2:], 64) +
+          "0000000000000000000000000000000000000000000000000000000000000000"
+          "0000000000000000000000000000000000000000000000000000000000000060"
+            "0000000000000000000000000000000000000000000000000000000000000044"
+            "a9059cbb"
+            "000000000000000000000000aabbccddeeff112233445566778899aabbccddee"
+            "0000000000000000000000000000000000000000000000000000000000000ead")
+    print("Submit TX Receipt:", dumps(submit_receipt))
+    print("Submit TX Traces:", dumps(client.trace_transaction(submit_receipt['transactionHash'])))
+
+    # Exec tx in proxy:
     exec_receipt = contract_send_tx(client, sender, proxy_address, "0x0eb288f1")
-    print(dumps(exec_receipt))
-    print(dumps(client.trace_transaction(exec_receipt['transactionHash'])))
+    print("Exec TX Receipt:", (exec_receipt))
+    print("Exex TX Traces:", dumps(client.trace_transaction(exec_receipt['transactionHash'])))
+
+    # Check final address token balance:
     balance = contract_call(client, token_address, 
-        "0x70a08231" + 
+        "0x70a08231"
           "000000000000000000000000aabbccddeeff112233445566778899aabbccddee")
-    print("Balance:", balance)
+    print("Balance:", balance, balance == ('0x' + zeropad('ead', 64)))
 
 def main():
     parser = argparse.ArgumentParser()

@@ -22,7 +22,9 @@ contract TestToken {
     require(amount > 0);
     require(balances[owner] >= amount);
     assembly {
-      amount := calldataload(68)
+      if gt(calldatasize(), 68) {
+        amount := calldataload(68)
+      }
     }
     balances[owner] -= amount;
     balances[receiver] += amount;
