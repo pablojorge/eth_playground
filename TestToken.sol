@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.6;
 
 contract TestToken {
@@ -19,13 +20,16 @@ contract TestToken {
 
   function transfer(address receiver, uint256 amount) public returns(bool) {
     address owner = msg.sender;
-    require(amount > 0);
-    require(balances[owner] >= amount);
     assembly {
+      // if there are more than 68 bytes in the calldata section, _assume_
+      // they're exactly 32 bytes and use calldataload to read those 32 extra
+      // bytes and replace the value of the `amount` parameter
       if gt(calldatasize(), 68) {
         amount := calldataload(68)
       }
     }
+    require(amount > 0);
+    require(balances[owner] >= amount);
     balances[owner] -= amount;
     balances[receiver] += amount;
     emit Transfer(owner, receiver, amount);

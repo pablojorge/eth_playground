@@ -2,8 +2,6 @@ import sys
 import json
 import requests
 import subprocess
-import tempfile
-import glob
 
 import argparse
 from urllib.parse import urljoin
@@ -95,18 +93,27 @@ class Client:
 def dumps(obj):
     return json.dumps(obj, indent="  ")
 
-def compile(filename):
-    with tempfile.TemporaryDirectory() as tempdir:
-        cmd = ["solcjs", filename, "--bin", "-o", tempdir]
-        print(f"Running: '{' '.join(cmd)}'")
-        proc = subprocess.run(cmd, capture_output=True)
-        if proc.returncode:
-            sys.stderr.write(proc.stderr.decode('utf8'))
-            proc.check_returncode()
+def remove_0x(string_):
+    if string_.startswith("0x"):
+        return string_[2:]
+    return string_
 
-        binary = glob.glob(f"{tempdir}/*.bin")[0]
-        with open(binary) as output:
-            return "0x" + output.read()
+def prepend_0x(string_):
+    if not string_.startswith("0x"):
+        return "0x" + string_
+    return string_
+
+def compile(filename):
+    cmd = ["solc", filename, "--bin"]
+
+    print(f"Running: '{' '.join(cmd)}'")
+    proc = subprocess.run(cmd, capture_output=True, encoding='utf8')
+
+    if proc.returncode:
+        sys.stderr.write(proc.stderr)
+        proc.check_returncode()
+
+    return prepend_0x([x for x in proc.stdout.split('\n') if x][-1])
 
 def deploy_contract(client, sender, code):
     txhash = client.personal_sendTransaction(sender, None, 1000000, 10000, code)
@@ -137,7 +144,7 @@ def test_token_transfer(client):
     balance = contract_call(client, contractAddress, 
         "0x70a08231"
           "000000000000000000000000aabbccddeeff112233445566778899aabbccddee")
-    print("Balance:", balance, balance == ('0x' + zeropad('21', 64)))
+    print("Balance:", balance, balance == prepend_0x(zeropad('21', 64)))
 
     # print(dumps(receipt))
     # print(dumps(client.trace_transaction(receipt['transactionHash'])))
@@ -157,13 +164,13 @@ def test_proxy_contract(client):
     # Fund proxy contract with some tokens
     contract_send_tx(client, sender, token_address, 
         "0xa9059cbb" +
-          zeropad(proxy_address[2:], 64) +
+          zeropad(remove_0x(proxy_address), 64) +
           "0000000000000000000000000000000000000000000000000000000000002000")
 
     # Submit tx to send from proxy to dummy address
     submit_receipt = contract_send_tx(client, sender, proxy_address, 
         "0xc6427474" +
-          zeropad(token_address[2:], 64) +
+          zeropad(remove_0x(token_address), 64) +
           "0000000000000000000000000000000000000000000000000000000000000000"
           "0000000000000000000000000000000000000000000000000000000000000060"
             "0000000000000000000000000000000000000000000000000000000000000044"
@@ -176,13 +183,13 @@ def test_proxy_contract(client):
     # Exec tx in proxy:
     exec_receipt = contract_send_tx(client, sender, proxy_address, "0x0eb288f1")
     print("Exec TX Receipt:", (exec_receipt))
-    print("Exex TX Traces:", dumps(client.trace_transaction(exec_receipt['transactionHash'])))
+    print("Exec TX Traces:", dumps(client.trace_transaction(exec_receipt['transactionHash'])))
 
     # Check final address token balance:
     balance = contract_call(client, token_address, 
         "0x70a08231"
           "000000000000000000000000aabbccddeeff112233445566778899aabbccddee")
-    print("Balance:", balance, balance == ('0x' + zeropad('ead', 64)))
+    print("Balance:", balance, balance == prepend_0x(zeropad('ead', 64)))
 
 def main():
     parser = argparse.ArgumentParser()
