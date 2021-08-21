@@ -1,0 +1,12 @@
+curl \
+    --request POST \
+    --data '{
+        "jsonrpc":"2.0",
+        "method":"trace_transaction",
+        "params":[
+            "0x2732815f1df71b6c514a7da1077c1a7d20c1e9f1bbb13cd30e51b44a00006589"
+        ],
+        "id": 1
+        }' \
+    --header 'Content-Type: application/json' \
+    http://localhost:8545 | jq
