@@ -4,7 +4,8 @@ curl \
         "jsonrpc":"2.0",
         "method":"eth_getBalance",
         "params":[
-            "0x00a329c0648769a73afac7f9381e08fb43dbea72"
+            "0x00a329c0648769a73afac7f9381e08fb43dbea72",
+            "latest"
         ],
         "id": 1
         }' \

@@ -1,5 +1,6 @@
 import sys
 import json
+import time
 import requests
 import subprocess
 import traceback
@@ -38,6 +39,9 @@ class RPCRequest:
         if body.get("error"):
             raise Exception(body['error'])
 
+        if body["result"] is None:
+            raise Exception("null result")
+
         return body["result"]
 
     def as_curl(self):
@@ -47,7 +51,8 @@ class RPCRequest:
                 f"http://{self.host}:{self.port}")
 
 class Client:
-    def __init__(self, host, port, verbose):
+    def __init__(self, desc, host, port, verbose):
+        self.desc = desc
         self.host = host
         self.port = port
         self.verbose = verbose
@@ -80,6 +85,9 @@ class Client:
             "data": data
         }
         return self.__call("eth_call", [req, at_])
+
+    def eth_getTransactionByHash(self, txhash):
+        return self.__call("eth_getTransactionByHash", [txhash])
 
     def eth_getTransactionReceipt(self, txhash):
         return self.__call("eth_getTransactionReceipt", [txhash])
@@ -125,16 +133,49 @@ def compile(filename):
 
     return prepend_0x([x for x in proc.stdout.split('\n') if x][-1])
 
+def wait_condition(action, condition, max_retries):
+    attempts = 0
+    success = False
+
+    while True:
+        try:
+            ret = action()
+            if condition(ret):
+                success = True
+                return ret
+        finally:
+            if not success:
+                attempts += 1
+                if attempts == max_retries + 1:
+                    raise Exception("Max number of retries reached")
+                time.sleep(1)
+
+def wait_confirmation(client, txhash):
+    return wait_condition(
+        lambda: client.eth_getTransactionByHash(txhash), 
+        lambda tx: tx["blockHash"] is not None,
+        10
+    )
+
+def wait_receipt(client, txhash):
+    return wait_condition(
+        lambda: client.eth_getTransactionReceipt(txhash), 
+        lambda _: True,
+        10
+    )
+
 def deploy_contract(client, sender, code):
     txhash = client.personal_sendTransaction(sender, None, 1000000, 10000, code)
-    receipt = client.eth_getTransactionReceipt(txhash)
+    wait_confirmation(client, txhash)
+    receipt = wait_receipt(client, txhash)
     if receipt["status"] != "0x1":
         raise Exception("Deployment failed")
     return receipt["contractAddress"]
 
 def contract_send_tx(client, sender, contractAddress, data):
     txhash = client.personal_sendTransaction(sender, contractAddress, 4000000, 10000, data)
-    receipt = client.eth_getTransactionReceipt(txhash)
+    wait_confirmation(client, txhash)
+    receipt = wait_receipt(client, txhash)
     if receipt["status"] != "0x1":
         raise Exception("Sending TX to contract failed")
     return receipt
@@ -198,37 +239,42 @@ def test_extra_log_data(client):
 
     assert balance == prepend_0x(zeropad('ead', 64)), f"Balance is {balance}"
 
-def run_tests(client, tests):
+def elapsed_since(start):
+    return "%.2fs" % (time.time() - start)
+
+def run_tests(tests):
     errors = []
 
-    for test in tests:
+    for test, client in tests:
         try:
-            sys.stdout.write(f"Running '{test.__name__}'... ")
+            sys.stdout.write(f" - '{test.__name__}' ({client.desc})... ")
+            sys.stdout.flush()
+            start = time.time()
             test(client)
-            sys.stdout.write("OK\n")
+            sys.stdout.write(f"OK ({elapsed_since(start)})\n")
         except Exception as e:
             _, _, tb = sys.exc_info()
-            errors.append((test, e, tb))
-            sys.stdout.write(f"ERROR\n")
+            errors.append((test, client, e, tb))
+            sys.stdout.write(f"ERROR ({elapsed_since(start)})\n")
 
-    for (test, exc, tb) in errors:
-        print(f"\nError in {test.__name__}: {exc}\n")
+    for (test, client, exc, tb) in errors:
+        print(f"\nError in '{test.__name__}' ({client.desc}): {exc}\n")
         traceback.print_tb(tb)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("host")
-    parser.add_argument("port", type=int)
     parser.add_argument("--verbose", action="store_true", default=False)
     args = parser.parse_args()
 
-    client = Client(args.host, args.port, args.verbose)
+    openeth_client = Client("OpenEth", "localhost", "8545", args.verbose)
+    geth_client = Client("Geth", "localhost", "8546", args.verbose)
 
-    run_tests(client, [
-        test_extra_parameter,
-        test_extra_log_data
+    run_tests([
+        (test_extra_parameter, openeth_client),
+        (test_extra_log_data, openeth_client),
+        (test_extra_parameter, geth_client),
+        (test_extra_log_data, geth_client),
     ])
-
 
 if __name__ == '__main__':
     main()
