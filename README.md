@@ -1,4 +1,4 @@
-# Solidity playground
+# Ethereum playground
 
 ## Requirements
 
@@ -8,34 +8,34 @@
 
 ## Running
 
-1. Execute `run-node.sh`; it will build an OpenEthereum Docker image and run it, ready for connections on `localhost:8545`
+1. Start the nodes with `docker-compose up`:
 
 ```bash
-$ bash run-node.sh
-+ docker build -t openethereum .
-[...]
-Successfully tagged openethereum:latest
-+ docker run -ti -p 8545:8545 openethereum
-2021-08-16 09:44:11 UTC Starting OpenEthereum/v3.3.0-rc.4-stable/x86_64-linux-musl/rustc1.47.0
+$ docker-compose up
+Starting solidityfun_openethereum_1 ... done
+Starting solidityfun_geth_1         ... done
 [...]
 ```
 
 2. Execute the tests:
 
 ```bash
-$ python3 tests.py localhost 8545
-Running 'test_extra_parameter'... OK
-Running 'test_extra_log_data'... OK
+$ python3 tests.py
+ - 'test_extra_parameter' (OpenEth)... OK (0.18s)
+ - 'test_extra_log_data' (OpenEth)... OK (0.25s)
+ - 'test_extra_parameter' (Geth)... OK (4.31s)
+ - 'test_extra_log_data' (Geth)... OK (10.68s)
 ```
 
-To see a dump of requests (in curl format), and results, run the script with the `--verbose` flag:
+Run with the `--verbose` flag to see a dump of requests (as cURL) and responses:
 
 ```bash
-$ python3 tests.py localhost 8545 --verbose
-Running 'test_extra_parameter'... >> curl -X POST --data '{"jsonrpc": "2.0", "method": "eth_accounts", "params": [], "id": 1}' --header 'Content-Type: application/json' http://localhost:8545
+$ python3 tests.py --verbose
+ - 'test_extra_parameter' (OpenEth)... >> curl -X POST --data '{"jsonrpc": "2.0", "method": "eth_accounts", "params": [], "id": 1}' --header 'Content-Type: application/json' http://localhost:8545
 << [
   "0x00a329c0648769a73afac7f9381e08fb43dbea72"
 ]
+>> curl -X POST --data '{"jsonrpc": "2.0", "method": "personal_sendTransaction", "params": [{"from": "0x00a329c0648769a73afac7f9381e08fb43dbea72", "to": null, "gas": "0xf4240", "gasPrice": "0x2710",
 [...]
 ```
 
