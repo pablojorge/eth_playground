@@ -50,6 +50,7 @@ class RPCRequest:
                 f"--header 'Content-Type: application/json' " +
                 f"http://{self.host}:{self.port}")
 
+# See https://eth.wiki/json-rpc/API
 class Client:
     def __init__(self, desc, host, port, verbose):
         self.desc = desc
@@ -69,10 +70,12 @@ class Client:
     def eth_accounts(self):
         return self.__call("eth_accounts", [])
 
-    def personal_sendTransaction(self, from_, to_, gas, gasPrice, data):
+    def personal_sendTransaction(self, from_, to_, value_, nonce, gas, gasPrice, data):
         req = {
             "from": from_,
             "to": to_,
+            "value": hex(value_),
+            "nonce": hex(nonce),
             "gas": hex(gas),
             "gasPrice": hex(gasPrice),
             "data": data
@@ -85,6 +88,12 @@ class Client:
             "data": data
         }
         return self.__call("eth_call", [req, at_])
+
+    def eth_blockNumber(self):
+        return self.__call("eth_blockNumber", [])
+
+    def eth_getTransactionCount(self, address, block="pending"):
+        return self.__call("eth_getTransactionCount", [address, block])
 
     def eth_getTransactionByHash(self, txhash):
         return self.__call("eth_getTransactionByHash", [txhash])
@@ -133,7 +142,7 @@ def compile(filename):
 
     return prepend_0x([x for x in proc.stdout.split('\n') if x][-1])
 
-def wait_condition(action, condition, max_retries):
+def wait_condition(action, condition, max_retries, on_retry=lambda: time.sleep(1)):
     attempts = 0
     success = False
 
@@ -148,7 +157,7 @@ def wait_condition(action, condition, max_retries):
                 attempts += 1
                 if attempts == max_retries + 1:
                     raise Exception("Max number of retries reached")
-                time.sleep(1)
+                on_retry()
 
 def wait_confirmation(client, txhash):
     return wait_condition(
@@ -165,7 +174,8 @@ def wait_receipt(client, txhash):
     )
 
 def deploy_contract(client, sender, code):
-    txhash = client.personal_sendTransaction(sender, None, 1000000, 10000, code)
+    nonce = int(client.eth_getTransactionCount(sender), 16)
+    txhash = client.personal_sendTransaction(sender, None, 0, nonce, 1000000, 10000, code)
     wait_confirmation(client, txhash)
     receipt = wait_receipt(client, txhash)
     if receipt["status"] != "0x1":
@@ -173,7 +183,8 @@ def deploy_contract(client, sender, code):
     return receipt["contractAddress"]
 
 def contract_send_tx(client, sender, contractAddress, data):
-    txhash = client.personal_sendTransaction(sender, contractAddress, 4000000, 10000, data)
+    nonce = int(client.eth_getTransactionCount(sender), 16)
+    txhash = client.personal_sendTransaction(sender, contractAddress, 0, nonce, 4000000, 10000, data)
     wait_confirmation(client, txhash)
     receipt = wait_receipt(client, txhash)
     if receipt["status"] != "0x1":
@@ -268,6 +279,9 @@ def main():
 
     openeth_client = Client("OpenEth", "localhost", "8545", args.verbose)
     geth_client = Client("Geth", "localhost", "8546", args.verbose)
+
+    if int(geth_client.eth_blockNumber(), 16) < 100:
+        print("WARNING: Geth node below block #100, tests may fail")
 
     run_tests([
         (test_extra_parameter, openeth_client),
