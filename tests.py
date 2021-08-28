@@ -218,19 +218,19 @@ def test_extra_parameter(client):
 
 def test_extra_log_data(client):
     token_code = compile("src/TestToken.sol")
-    proxy_code = compile("src/ProxyContract.sol")
+    runner_code = compile("src/Runner.sol")
     sender = client.eth_accounts()[0]
     token_address = deploy_contract(client, sender, token_code)
-    proxy_address = deploy_contract(client, sender, proxy_code)
+    runner_address = deploy_contract(client, sender, runner_code)
 
-    # Fund proxy contract with some tokens
+    # Fund runner contract with some tokens
     contract_send_tx(client, sender, token_address, 
         "0xa9059cbb" +
-          zeropad(remove_0x(proxy_address), 64) +
+          zeropad(remove_0x(runner_address), 64) +
           "0000000000000000000000000000000000000000000000000000000000002000")
 
-    # Submit tx to send from proxy to dummy address
-    submit_receipt = contract_send_tx(client, sender, proxy_address, 
+    # Submit tx to send from runner to dummy address
+    submit_receipt = contract_send_tx(client, sender, runner_address, 
         "0xc6427474" +
           zeropad(remove_0x(token_address), 64) +
           "0000000000000000000000000000000000000000000000000000000000000000"
@@ -240,8 +240,8 @@ def test_extra_log_data(client):
             "000000000000000000000000aabbccddeeff112233445566778899aabbccddee"
             "0000000000000000000000000000000000000000000000000000000000000ead")
 
-    # Exec tx in proxy:
-    exec_receipt = contract_send_tx(client, sender, proxy_address, "0x0eb288f1")
+    # Exec tx in runner:
+    exec_receipt = contract_send_tx(client, sender, runner_address, "0x0eb288f1")
 
     # Check final address token balance:
     balance = contract_call(client, token_address, 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.6;
 
-contract ProxyContract {
+contract Runner {
   event Submission(address indexed destination, uint256 indexed value, bytes data);
 
   struct Transaction {
