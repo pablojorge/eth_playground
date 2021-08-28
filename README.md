@@ -1,4 +1,4 @@
-# Ethereum playground
+# Ethereum Playground
 
 ## Requirements
 
@@ -8,10 +8,16 @@
 
 ## Running
 
-1. Start the nodes with `docker-compose up`:
+1. Start the nodes with `docker-compose up --build`:
 
 ```bash
 $ docker-compose up
+Building openethereum
+[...]
+Successfully tagged solidityfun_openethereum:latest
+Building geth
+[...]
+Successfully tagged solidityfun_geth:latest
 Starting solidityfun_openethereum_1 ... done
 Starting solidityfun_geth_1         ... done
 [...]
