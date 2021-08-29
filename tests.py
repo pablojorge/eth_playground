@@ -126,14 +126,16 @@ class OpenEthereumClient(Client):
           "to": trace["action"]["to"],
           "value": trace["action"]["value"],
           "gas": trace["action"]["gas"],
-          "gasUsed": trace["result"]["gasUsed"],
+          "gasUsed": trace.get("result", {}).get("gasUsed"),
           "input": trace["action"]["input"],
-          "output": trace["result"]["output"],
+          "output": trace.get("result", {}).get("output"),
+          "error": trace.get("error")
         }
 
     # https://openethereum.github.io/JSONRPC-trace-module
     def trace_transaction(self, txhash):
-        return list(map(self.normalize, self._call("trace_transaction", [txhash])))
+        traces = self._call("trace_transaction", [txhash])
+        return list(map(self.normalize, traces))
 
 
 class GethClient(Client):
@@ -149,7 +151,8 @@ class GethClient(Client):
           "gas": trace["gas"],
           "gasUsed": trace["gasUsed"],
           "input": trace["input"],
-          "output": trace["output"],
+          "output": trace.get("output"),
+          "error": trace.get("error")
         }
         return [parent] + sum(list(map(cls.flatten, trace.get('calls',[]))), [])
 
@@ -241,6 +244,11 @@ def contract_send_tx(client, sender, contractAddress, data):
 def contract_call(client, contractAddress, data):
     return client.eth_call(contractAddress, data, "latest")
 
+def erc20_balanceOf(client, token, address):
+    data = "0x70a08231" + zeropad(remove_0x(address), 64)
+    return contract_call(client, token, data)
+
+
 ## Tests
 
 def test_extra_parameter(client):
@@ -315,6 +323,7 @@ def test_extra_log_data(client):
     assert traces[0]["value"] == "0x0"
     assert traces[0]["input"] == "0x0eb288f1"
     assert traces[0]["output"] == prepend_0x(zeropad("01", 64))
+    assert traces[0]["error"] is None
 
     assert traces[1]["type"] == "call"
     assert traces[1]["from"] == runner_address
@@ -322,6 +331,7 @@ def test_extra_log_data(client):
     assert traces[1]["value"] == "0x0"
     assert traces[1]["input"] == "0xa9059cbb000000000000000000000000aabbccddeeff112233445566778899aabbccddee0000000000000000000000000000000000000000000000000000000000000ead"
     # assert traces[1]["output"] == prepend_0x(zeropad("01", 64)) # Geth returns "0x0"
+    assert traces[1]["error"] is None
 
     # Check final address token balance:
     balance = contract_call(client, token_address, 
@@ -329,6 +339,72 @@ def test_extra_log_data(client):
           "000000000000000000000000aabbccddeeff112233445566778899aabbccddee")
 
     assert balance == prepend_0x(zeropad('ead', 64)), f"Balance is {balance}"
+
+def test_partial_revert(client):
+    token_code = compile("src/TestToken.sol")
+    runner_code = compile("src/Runner.sol")
+    sender = client.eth_accounts()[0]
+    token_address = deploy_contract(client, sender, token_code)
+    runner_address = deploy_contract(client, sender, runner_code)
+
+    # Fund runner contract with some tokens
+    contract_send_tx(client, sender, token_address, 
+        "0xa9059cbb" +
+          zeropad(remove_0x(runner_address), 64) +
+          "0000000000000000000000000000000000000000000000000000000000002000")
+
+    # Submit tx to send from runner more tokens than available:
+    submit_receipt = contract_send_tx(client, sender, runner_address, 
+        "0xc6427474" +
+          zeropad(remove_0x(token_address), 64) +
+          "0000000000000000000000000000000000000000000000000000000000000000"
+          "0000000000000000000000000000000000000000000000000000000000000060"
+            "0000000000000000000000000000000000000000000000000000000000000044"
+            "a9059cbb"
+            "000000000000000000000000aabbccddeeff112233445566778899aabbccddee"
+            "0000000000000000000000000000000000000000000000000000000000004000")
+
+    # Exec tx in runner:
+    exec_receipt = contract_send_tx(client, sender, runner_address, "0x0eb288f1")
+
+    logs = exec_receipt['logs']
+    assert len(logs) == 1, f"Unexpected number of logs {len(logs)}"
+
+    topics = logs[0]['topics']
+    assert len(topics) == 2, f"Unexpected number of topics {len(logs)}"
+
+    assert topics[1] == prepend_0x(zeropad(remove_0x(token_address), 64))
+
+    data = remove_0x(logs[0]['data'])
+    expected = zeropad("00", 64)
+    assert data == expected, f"expected {expected}, got {data}"
+
+    # Capture and validate traces
+    traces = client.trace_transaction(exec_receipt["transactionHash"])
+    assert len(traces) == 2, f"Unexpected number of traces {len(traces)}"
+
+    assert traces[0]["type"] == "call"
+    assert traces[0]["from"] == sender
+    assert traces[0]["to"] == runner_address
+    assert traces[0]["value"] == "0x0"
+    assert traces[0]["input"] == "0x0eb288f1"
+    assert traces[0]["output"] == prepend_0x(zeropad("00", 64)) # Failure
+    assert traces[0]["error"] is None
+
+    assert traces[1]["type"] == "call"
+    assert traces[1]["from"] == runner_address
+    assert traces[1]["to"] == token_address
+    assert traces[1]["value"] == "0x0"
+    assert traces[1]["input"] == "0xa9059cbb000000000000000000000000aabbccddeeff112233445566778899aabbccddee0000000000000000000000000000000000000000000000000000000000004000"
+    assert traces[1]["output"] is None # reverted
+    assert traces[1]["error"] is not None
+
+    # Check final address token balance:
+    balance = erc20_balanceOf(client, token_address, runner_address)
+    assert balance == prepend_0x(zeropad('2000', 64)), f"Balance is {balance}"
+
+    balance = erc20_balanceOf(client, token_address, "aabbccddeeff112233445566778899aabbccddee")
+    assert balance == prepend_0x(zeropad('00', 64)), f"Balance is {balance}"
 
 def elapsed_since(start):
     return "%.2fs" % (time.time() - start)
@@ -368,6 +444,8 @@ def main():
         (test_extra_log_data, openeth_client),
         (test_extra_parameter, geth_client),
         (test_extra_log_data, geth_client),
+        (test_partial_revert, openeth_client),
+        (test_partial_revert, geth_client),
     ])
 
 if __name__ == '__main__':

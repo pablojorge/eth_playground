@@ -3,6 +3,7 @@ pragma solidity ^0.8.6;
 
 contract Runner {
   event Submission(address indexed destination, uint256 indexed value, bytes data);
+  event Execution(address indexed destination, bool result);
 
   struct Transaction {
     address destination;
@@ -29,6 +30,7 @@ contract Runner {
 
   function executeTransaction() public returns (bool) { // 0eb288f1
     (bool result, ) = transaction.destination.call{value: transaction.value}(transaction.data);
+    emit Execution(transaction.destination, result);
     return result;
   }
 }
