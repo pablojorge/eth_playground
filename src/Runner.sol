@@ -11,7 +11,7 @@ contract Runner {
     bytes data;
   }
 
-  Transaction transaction;
+  Transaction[] transactions;
 
   constructor() {}
 
@@ -19,18 +19,30 @@ contract Runner {
     public
     returns (uint256 transactionId)
   {
-    transaction = Transaction({
+    transactions.push(Transaction({
       destination: destination,
       value: value,
       data: data
-    });
+    }));
     emit Submission(destination, value, data);
     return 1;
   }
 
-  function executeTransaction() public returns (bool) { // 0eb288f1
-    (bool result, ) = transaction.destination.call{value: transaction.value}(transaction.data);
-    emit Execution(transaction.destination, result);
-    return result;
+  // $ solc --hashes src/Runner.sol
+  // ======= src/Runner.sol:Runner =======
+  // Function signatures:
+  // 069549bc: executeTransactions()
+  // c6427474: submitTransaction(address,uint256,bytes)
+
+  // Returns true is _all_ executions are successful:
+  function executeTransactions() public returns (bool) { // 069549bc 
+    bool ret = true;
+    for (uint i=0; i < transactions.length; i++) {
+      Transaction memory transaction = transactions[i];
+      (bool result, ) = transaction.destination.call{value: transaction.value}(transaction.data);
+      ret = ret && result;
+      emit Execution(transaction.destination, result);
+    }
+    return ret;
   }
 }

@@ -311,7 +311,7 @@ def test_extra_log_data(client):
     assert data == expected
 
     # Exec tx in runner:
-    exec_receipt = contract_send_tx(client, sender, runner_address, "0x0eb288f1")
+    exec_receipt = contract_send_tx(client, sender, runner_address, "0x069549bc")
 
     # Capture and validate traces
     traces = client.trace_transaction(exec_receipt["transactionHash"])
@@ -321,7 +321,7 @@ def test_extra_log_data(client):
     assert traces[0]["from"] == sender
     assert traces[0]["to"] == runner_address
     assert traces[0]["value"] == "0x0"
-    assert traces[0]["input"] == "0x0eb288f1"
+    assert traces[0]["input"] == "0x069549bc"
     assert traces[0]["output"] == prepend_0x(zeropad("01", 64))
     assert traces[0]["error"] is None
 
@@ -353,8 +353,19 @@ def test_partial_revert(client):
           zeropad(remove_0x(runner_address), 64) +
           "0000000000000000000000000000000000000000000000000000000000002000")
 
-    # Submit tx to send from runner more tokens than available:
-    submit_receipt = contract_send_tx(client, sender, runner_address, 
+    # Submit valid tx to send some tokens:
+    contract_send_tx(client, sender, runner_address, 
+        "0xc6427474" +
+          zeropad(remove_0x(token_address), 64) +
+          "0000000000000000000000000000000000000000000000000000000000000000"
+          "0000000000000000000000000000000000000000000000000000000000000060"
+            "0000000000000000000000000000000000000000000000000000000000000044"
+            "a9059cbb"
+            "000000000000000000000000aabbccddeeff112233445566778899aabbccddee"
+            "0000000000000000000000000000000000000000000000000000000000001000")
+
+    # Submit invalid tx to send more tokens than available:
+    contract_send_tx(client, sender, runner_address, 
         "0xc6427474" +
           zeropad(remove_0x(token_address), 64) +
           "0000000000000000000000000000000000000000000000000000000000000000"
@@ -364,47 +375,72 @@ def test_partial_revert(client):
             "000000000000000000000000aabbccddeeff112233445566778899aabbccddee"
             "0000000000000000000000000000000000000000000000000000000000004000")
 
-    # Exec tx in runner:
-    exec_receipt = contract_send_tx(client, sender, runner_address, "0x0eb288f1")
+    # Exec txs in runner:
+    exec_receipt = contract_send_tx(client, sender, runner_address, "0x069549bc")
 
+    # Capture and validate logs
     logs = exec_receipt['logs']
-    assert len(logs) == 1, f"Unexpected number of logs {len(logs)}"
+    assert len(logs) == 3, f"Unexpected number of logs {len(logs)}"
 
-    topics = logs[0]['topics']
-    assert len(topics) == 2, f"Unexpected number of topics {len(logs)}"
+    # Transfer(from=runner, to=dummy, value=0x1000)
+    assert len(logs[0]['topics']) == 3
+    assert logs[0]['address'] == token_address
+    assert logs[0]['logIndex'] == "0x0"
+    assert logs[0]['topics'][0] == "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+    assert logs[0]['topics'][1] == prepend_0x(zeropad(remove_0x(runner_address), 64))
+    assert logs[0]['topics'][2] == prepend_0x(zeropad("aabbccddeeff112233445566778899aabbccddee", 64))
+    assert logs[0]['data'] == prepend_0x(zeropad("1000", 64))
 
-    assert topics[1] == prepend_0x(zeropad(remove_0x(token_address), 64))
+    # 1st Execution(destination=token_address, result=1)
+    assert len(logs[1]['topics']) == 2
+    assert logs[1]['address'] == runner_address
+    assert logs[1]['logIndex'] == "0x1"
+    assert logs[1]['topics'][0] == "0x3fe9a337a26945194ec5a3dbeefaf9fb06a2a9b91825681dc24772f1575124d4"
+    assert logs[1]['topics'][1] == prepend_0x(zeropad(remove_0x(token_address), 64))
+    assert logs[1]['data'] == prepend_0x(zeropad("01", 64))
 
-    data = remove_0x(logs[0]['data'])
-    expected = zeropad("00", 64)
-    assert data == expected, f"expected {expected}, got {data}"
+    # 2nd Execution(destination=token_address, result=1)
+    assert len(logs[2]['topics']) == 2
+    assert logs[2]['address'] == runner_address
+    assert logs[2]['logIndex'] == "0x2"
+    assert logs[2]['topics'][0] == "0x3fe9a337a26945194ec5a3dbeefaf9fb06a2a9b91825681dc24772f1575124d4"
+    assert logs[2]['topics'][1] == prepend_0x(zeropad(remove_0x(token_address), 64))
+    assert logs[2]['data'] == prepend_0x(zeropad("00", 64))
 
     # Capture and validate traces
     traces = client.trace_transaction(exec_receipt["transactionHash"])
-    assert len(traces) == 2, f"Unexpected number of traces {len(traces)}"
+    assert len(traces) == 3, f"Unexpected number of traces {len(traces)}"
 
     assert traces[0]["type"] == "call"
     assert traces[0]["from"] == sender
     assert traces[0]["to"] == runner_address
     assert traces[0]["value"] == "0x0"
-    assert traces[0]["input"] == "0x0eb288f1"
-    assert traces[0]["output"] == prepend_0x(zeropad("00", 64)) # Failure
+    assert traces[0]["input"] == "0x069549bc"
+    assert traces[0]["output"] == prepend_0x(zeropad("00", 64)) # Failure (one tx failed)
     assert traces[0]["error"] is None
 
     assert traces[1]["type"] == "call"
     assert traces[1]["from"] == runner_address
     assert traces[1]["to"] == token_address
     assert traces[1]["value"] == "0x0"
-    assert traces[1]["input"] == "0xa9059cbb000000000000000000000000aabbccddeeff112233445566778899aabbccddee0000000000000000000000000000000000000000000000000000000000004000"
-    assert traces[1]["output"] is None # reverted
-    assert traces[1]["error"] is not None
+    assert traces[1]["input"] == "0xa9059cbb000000000000000000000000aabbccddeeff112233445566778899aabbccddee0000000000000000000000000000000000000000000000000000000000001000"
+    assert traces[1]["output"] in (prepend_0x(zeropad("01", 64)), '0x') # Success
+    assert traces[1]["error"] is None
+
+    assert traces[2]["type"] == "call"
+    assert traces[2]["from"] == runner_address
+    assert traces[2]["to"] == token_address
+    assert traces[2]["value"] == "0x0"
+    assert traces[2]["input"] == "0xa9059cbb000000000000000000000000aabbccddeeff112233445566778899aabbccddee0000000000000000000000000000000000000000000000000000000000004000"
+    assert traces[2]["output"] is None # reverted
+    assert traces[2]["error"] is not None # reverted
 
     # Check final address token balance:
     balance = erc20_balanceOf(client, token_address, runner_address)
-    assert balance == prepend_0x(zeropad('2000', 64)), f"Balance is {balance}"
+    assert balance == prepend_0x(zeropad('1000', 64)), f"Balance is {balance}"
 
     balance = erc20_balanceOf(client, token_address, "aabbccddeeff112233445566778899aabbccddee")
-    assert balance == prepend_0x(zeropad('00', 64)), f"Balance is {balance}"
+    assert balance == prepend_0x(zeropad('1000', 64)), f"Balance is {balance}"
 
 def elapsed_since(start):
     return "%.2fs" % (time.time() - start)
