@@ -52,8 +52,7 @@ class RPCRequest:
 
 # See https://eth.wiki/json-rpc/API
 class Client:
-    def __init__(self, desc, host, port, verbose):
-        self.desc = desc
+    def __init__(self, host, port, verbose):
         self.host = host
         self.port = port
         self.verbose = verbose
@@ -66,6 +65,9 @@ class Client:
         if self.verbose:
             print("<<", dumps(res))
         return res
+
+    def _call(self, method, params):
+        return self.__call(method, params)
 
     def eth_accounts(self):
         return self.__call("eth_accounts", [])
@@ -111,7 +113,52 @@ class Client:
         return self.__call("eth_getLogs", [req])
 
     def trace_transaction(self, txhash):
-        return self.__call("trace_transaction", [txhash])
+        raise NotImplemented()
+
+class OpenEthereumClient(Client):
+    desc = "OpenEth"
+
+    @classmethod
+    def normalize(cls, trace):
+        return {
+          "type": trace["type"],
+          "from": trace["action"]["from"],
+          "to": trace["action"]["to"],
+          "value": trace["action"]["value"],
+          "gas": trace["action"]["gas"],
+          "gasUsed": trace["result"]["gasUsed"],
+          "input": trace["action"]["input"],
+          "output": trace["result"]["output"],
+        }
+
+    # https://openethereum.github.io/JSONRPC-trace-module
+    def trace_transaction(self, txhash):
+        return list(map(self.normalize, self._call("trace_transaction", [txhash])))
+
+
+class GethClient(Client):
+    desc = "Geth"
+
+    @classmethod
+    def flatten(cls, trace):
+        parent = {
+          "type": trace["type"].lower(),
+          "from": trace["from"],
+          "to": trace["to"],
+          "value": trace["value"],
+          "gas": trace["gas"],
+          "gasUsed": trace["gasUsed"],
+          "input": trace["input"],
+          "output": trace["output"],
+        }
+        return [parent] + sum(list(map(cls.flatten, trace.get('calls',[]))), [])
+
+    # https://geth.ethereum.org/docs/dapp/tracing
+    # https://geth.ethereum.org/docs/rpc/ns-debug#debug_tracetransaction
+    def trace_transaction(self, txhash):
+        trace = self._call("debug_traceTransaction", [txhash, {"tracer": "callTracer"}])
+        return self.flatten(trace)
+
 
 ## Utils
 
@@ -240,8 +287,41 @@ def test_extra_log_data(client):
             "000000000000000000000000aabbccddeeff112233445566778899aabbccddee"
             "0000000000000000000000000000000000000000000000000000000000000ead")
 
+    # The data in the logs has 28 extra bytes:
+    logs = submit_receipt['logs']
+    assert len(logs) == 1, f"Unexpected number of logs {len(logs)}"
+
+    data = remove_0x(logs[0]['data'])
+    expected = (
+        "0000000000000000000000000000000000000000000000000000000000000020"
+        "0000000000000000000000000000000000000000000000000000000000000044"
+            "a9059cbb"
+            "000000000000000000000000aabbccddeeff112233445566778899aabbccddee"
+            "0000000000000000000000000000000000000000000000000000000000000ead"
+            "00000000000000000000000000000000000000000000000000000000" # Extra bytes
+    )
+    assert data == expected
+
     # Exec tx in runner:
     exec_receipt = contract_send_tx(client, sender, runner_address, "0x0eb288f1")
+
+    # Capture and validate traces
+    traces = client.trace_transaction(exec_receipt["transactionHash"])
+    assert len(traces) == 2, f"Unexpected number of traces {len(traces)}"
+
+    assert traces[0]["type"] == "call"
+    assert traces[0]["from"] == sender
+    assert traces[0]["to"] == runner_address
+    assert traces[0]["value"] == "0x0"
+    assert traces[0]["input"] == "0x0eb288f1"
+    assert traces[0]["output"] == prepend_0x(zeropad("01", 64))
+
+    assert traces[1]["type"] == "call"
+    assert traces[1]["from"] == runner_address
+    assert traces[1]["to"] == token_address
+    assert traces[1]["value"] == "0x0"
+    assert traces[1]["input"] == "0xa9059cbb000000000000000000000000aabbccddeeff112233445566778899aabbccddee0000000000000000000000000000000000000000000000000000000000000ead"
+    # assert traces[1]["output"] == prepend_0x(zeropad("01", 64)) # Geth returns "0x0"
 
     # Check final address token balance:
     balance = contract_call(client, token_address, 
@@ -277,8 +357,8 @@ def main():
     parser.add_argument("--verbose", action="store_true", default=False)
     args = parser.parse_args()
 
-    openeth_client = Client("OpenEth", "localhost", "8545", args.verbose)
-    geth_client = Client("Geth", "localhost", "8546", args.verbose)
+    openeth_client = OpenEthereumClient("localhost", "8545", args.verbose)
+    geth_client = GethClient("localhost", "8546", args.verbose)
 
     if int(geth_client.eth_blockNumber(), 16) < 100:
         print("WARNING: Geth node below block #100, tests may fail")
