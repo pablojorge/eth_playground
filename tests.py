@@ -225,7 +225,7 @@ def wait_receipt(client, txhash):
 
 def deploy_contract(client, sender, code):
     nonce = int(client.eth_getTransactionCount(sender), 16)
-    txhash = client.personal_sendTransaction(sender, None, 0, nonce, 1000000, 10000, code)
+    txhash = client.personal_sendTransaction(sender, None, 0, nonce, 1000000, 10**9, code)
     wait_confirmation(client, txhash)
     receipt = wait_receipt(client, txhash)
     if receipt["status"] != "0x1":
@@ -234,7 +234,7 @@ def deploy_contract(client, sender, code):
 
 def contract_send_tx(client, sender, contractAddress, data):
     nonce = int(client.eth_getTransactionCount(sender), 16)
-    txhash = client.personal_sendTransaction(sender, contractAddress, 0, nonce, 4000000, 10000, data)
+    txhash = client.personal_sendTransaction(sender, contractAddress, 0, nonce, 4000000, 10**9, data)
     wait_confirmation(client, txhash)
     receipt = wait_receipt(client, txhash)
     if receipt["status"] != "0x1":
@@ -471,9 +471,6 @@ def main():
 
     openeth_client = OpenEthereumClient("localhost", "8545", args.verbose)
     geth_client = GethClient("localhost", "8546", args.verbose)
-
-    if int(geth_client.eth_blockNumber(), 16) < 100:
-        print("WARNING: Geth node below block #100, tests may fail")
 
     run_tests([
         (test_extra_parameter, openeth_client),
