@@ -121,7 +121,7 @@ class OpenEthereumClient(Client):
     @classmethod
     def normalize(cls, trace):
         return {
-          "type": trace["type"],
+          "type": trace["action"]["callType"] if trace["type"] == "call" else trace["type"],
           "from": trace["action"]["from"],
           "to": trace["action"]["to"],
           "value": trace["action"]["value"],
@@ -147,7 +147,7 @@ class GethClient(Client):
           "type": trace["type"].lower(),
           "from": trace["from"],
           "to": trace["to"],
-          "value": trace["value"],
+          "value": trace.get("value", "0x0"), # Not present on delegate calls
           "gas": trace["gas"],
           "gasUsed": trace["gasUsed"],
           "input": trace["input"],
@@ -303,6 +303,74 @@ def test_bad_balance_check(client):
 
     # It should be still zero:
     assert balance == prepend_0x(zeropad('00', 64)), f"Balance is {balance}"
+
+def test_impersonate(client):
+    sender = client.eth_accounts()[0]
+
+    token = compile("src/TestToken.sol")
+    tokenAddress = deploy_contract(client, sender, token)
+
+    impersonator = compile("src/Impersonator.sol")
+    impAddress = deploy_contract(client, sender, impersonator)
+
+    # Call setTarget():
+    contract_send_tx(client, sender, impAddress, 
+        "0x776d1a01" +
+          zeropad(remove_0x(tokenAddress), 64))
+
+    # Call transfer() to the impersonator, with a big value that would make
+    # the check fail in the target contract:
+    receipt = contract_send_tx(client, sender, impAddress, 
+        "0xa9059cbb" 
+          "000000000000000000000000aabbccddeeff112233445566778899aabbccddee"
+          "0000000000000000000000000000000000000000000000000000000000100000")
+
+    # Transaction seems to be OK:
+    assert receipt["status"] == "0x1"
+
+    logs = receipt["logs"]
+    assert len(logs) == 1, f"Unexpected number of logs {len(logs)}"
+
+    # Transfer(from=sender, to=victim, value=0x100000)
+    # We have a log with the address of the impersonator, so filtering logs by address is safe:
+    # (this address will always match in which 'context' -which storage- the code executed)
+    assert len(logs[0]['topics']) == 3
+    assert logs[0]['address'] == impAddress
+    assert logs[0]['logIndex'] == "0x0"
+    assert logs[0]['topics'][0] == "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+    assert logs[0]['topics'][1] == prepend_0x(zeropad(remove_0x(sender), 64))
+    assert logs[0]['topics'][2] == prepend_0x(zeropad("aabbccddeeff112233445566778899aabbccddee", 64))
+    assert logs[0]['data'] == prepend_0x(zeropad("100000", 64))
+
+    # Capture and validate traces
+    traces = client.trace_transaction(receipt["transactionHash"])
+    assert len(traces) == 2, f"Unexpected number of traces {len(traces)}"
+
+    # Original call to the impersonator:
+    assert traces[0]["type"] == "call"
+    assert traces[0]["from"] == sender
+    assert traces[0]["to"] == impAddress
+    assert traces[0]["value"] == "0x0"
+    assert traces[0]["output"] == prepend_0x(zeropad("01", 64))
+    assert traces[0]["error"] is None
+
+    # If we treat delegate calls as normal calls, this will look like a successful call
+    # to transfer X amount of the underlying token in the context of the target/victim contract
+    assert traces[1]["type"] == "delegatecall"
+    assert traces[1]["from"] == impAddress
+    assert traces[1]["to"] == tokenAddress
+    assert traces[1]["value"] == "0x0"
+    assert traces[1]["output"] in (prepend_0x(zeropad("01", 64)), '0x') # Success
+    assert traces[1]["error"] is None
+
+    # Fetch the token balance of the destination
+    balance = contract_call(client, impAddress, 
+        "0x70a08231"
+          "000000000000000000000000aabbccddeeff112233445566778899aabbccddee")
+
+    # It should have the big value, because the target code modified the storage of
+    # the impersonator
+    assert balance == prepend_0x(zeropad('100000', 64)), f"Balance is {balance}"
 
 def test_extra_log_data(client):
     token_code = compile("src/TestToken.sol")
@@ -514,6 +582,8 @@ def main():
         (test_partial_revert, geth_client),
         (test_bad_balance_check, openeth_client),
         (test_bad_balance_check, geth_client),
+        (test_impersonate, openeth_client),
+        (test_impersonate, geth_client),
     ])
 
 if __name__ == '__main__':
