@@ -271,6 +271,39 @@ def test_extra_parameter(client):
     # It should be the value sent in the extra param:
     assert balance == prepend_0x(zeropad('21', 64)), f"Balance is {balance}"
 
+def test_bad_balance_check(client):
+    code = compile("src/UnsafeToken.sol")
+    sender = client.eth_accounts()[0]
+    contractAddress = deploy_contract(client, sender, code)
+
+    # Call transfer() with a big amount, to make the check fail:
+    receipt = contract_send_tx(client, sender, contractAddress, 
+        "0xa9059cbb" 
+          "000000000000000000000000aabbccddeeff112233445566778899aabbccddee"
+          "0000000000000000000000000000000000000000000000000000000010000010")
+
+    # Transaction seems to be OK:
+    assert receipt["status"] == "0x1"
+
+    # Capture and validate traces
+    traces = client.trace_transaction(receipt["transactionHash"])
+    assert len(traces) == 1, f"Unexpected number of traces {len(traces)}"
+
+    assert traces[0]["type"] == "call"
+    assert traces[0]["from"] == sender
+    assert traces[0]["to"] == contractAddress
+    assert traces[0]["value"] == "0x0"
+    assert traces[0]["output"] == prepend_0x(zeropad("00", 64)) # Return value is false
+    assert traces[0]["error"] is None
+
+    # Fetch the token balance of the destination
+    balance = contract_call(client, contractAddress, 
+        "0x70a08231"
+          "000000000000000000000000aabbccddeeff112233445566778899aabbccddee")
+
+    # It should be still zero:
+    assert balance == prepend_0x(zeropad('00', 64)), f"Balance is {balance}"
+
 def test_extra_log_data(client):
     token_code = compile("src/TestToken.sol")
     runner_code = compile("src/Runner.sol")
@@ -479,6 +512,8 @@ def main():
         (test_extra_log_data, geth_client),
         (test_partial_revert, openeth_client),
         (test_partial_revert, geth_client),
+        (test_bad_balance_check, openeth_client),
+        (test_bad_balance_check, geth_client),
     ])
 
 if __name__ == '__main__':
